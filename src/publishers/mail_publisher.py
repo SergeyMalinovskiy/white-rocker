@@ -1,4 +1,5 @@
 import email
+import hashlib
 import imaplib
 import json
 import os
@@ -37,12 +38,16 @@ class MailResult(ISyncMessage):
             message: str,
             attachments: List[str],
             ack: IContainsAssignment,
+            hashsum: str,
+            send_time: str,
     ) -> None:
         self._sender = sender
         self._recipient = recipient
         self._message = message
         self._attachments = attachments
         self._ack = ack
+        self._hashsum = hashsum
+        self._send_time = send_time
 
 
     def sender(self) -> Sender:
@@ -60,6 +65,12 @@ class MailResult(ISyncMessage):
     def ack(self) -> Union[IContainsAssignment, None]:
         return self._ack
 
+    def send_time(self) -> str:
+        return self._send_time
+
+    def hashsum(self):
+        return self._hashsum
+
     def __dict__(self) -> dict:
         return {
             'sender': self._sender,
@@ -67,7 +78,16 @@ class MailResult(ISyncMessage):
             'message': self._message,
             'attachments': self._attachments,
             'ack': (self._ack.channel(), self._ack.to()) if self._ack else None,
+            'send_at': self._send_time,
+            'hashsum': self._hashsum,
+            'is_verified': self._hashsum == self.__hash__()
         }
+
+    def __hash__(self):
+        ord_bytes =  b''.join(
+            ord(ch).to_bytes(2, 'big') for ch in f"{self._sender}{self._recipient}{self._message}{len(self._attachments)}{self._send_time}"
+        )
+        return hashlib.sha256(ord_bytes).hexdigest()
 
 
 _DELAY = 10 # sec
@@ -237,11 +257,10 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
             for email_id in email_ids:
                 # Обработка каждого письма
                 status, msg_data = self._mail_service.fetch(email_id, '(RFC822)')
-
                 msg = email.message_from_bytes(msg_data[0][1])
-
-                subject = _decode_str(msg.get('Subject', ''))
-                from_addr = _decode_str(msg.get('From', ''))
+                #
+                # subject = _decode_str(msg.get('Subject', ''))
+                # from_addr = _decode_str(msg.get('From', ''))
 
                 body = json.loads(_get_email_body(msg))
                 attachments = []
@@ -279,6 +298,8 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
                     body.get('data'),
                     attachments,
                     DefaultAckAssignment(body.get('ack_channel'), body.get('ack_to')) if ack_valid else None,
+                    body.get('hashsum'),
+                    body.get('send_time'),
                 ))
                 # mails_results.append((
                 #     body.get('iam'),

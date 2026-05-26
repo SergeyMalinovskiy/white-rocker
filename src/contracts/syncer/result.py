@@ -28,3 +28,11 @@ class ISyncMessage(ABC):
     @abstractmethod
     def ack(self) -> Union[IContainsAssignment, None]:
         pass
+
+    @abstractmethod
+    def hashsum(self) -> str:
+        pass
+
+    @abstractmethod
+    def send_time(self) -> str: #формат Ymd_His
+        pass
