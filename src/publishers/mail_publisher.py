@@ -5,7 +5,7 @@ import json
 import os
 import time
 from email.header import decode_header
-from typing import Union, List
+from typing import Union, List, Dict, Set
 from datetime import datetime
 
 from _asyncio import Task
@@ -17,6 +17,7 @@ from contracts.syncer.distributor import ICanListeningIncomingMessages, HandlerI
 from contracts.syncer.result import ISyncMessage, Recipient, Sender
 
 Listeners = dict[HandlerId, Union[ICanHandleIncomingMessage, IAssignableId]]
+
 
 class DefaultAckAssignment(IContainsAssignment):
     def __init__(self, channel: str, to: str) -> None:
@@ -49,7 +50,6 @@ class MailResult(ISyncMessage):
         self._hashsum = hashsum
         self._send_time = send_time
 
-
     def sender(self) -> Sender:
         return self._sender
 
@@ -80,17 +80,21 @@ class MailResult(ISyncMessage):
             'ack': (self._ack.channel(), self._ack.to()) if self._ack else None,
             'send_at': self._send_time,
             'hashsum': self._hashsum,
-            'is_verified': self._hashsum == self.__hash__()
+            'is_verified': self._hashsum == self.__inner_hash().hexdigest()
         }
 
-    def __hash__(self):
-        ord_bytes =  b''.join(
-            ord(ch).to_bytes(2, 'big') for ch in f"{self._sender}{self._recipient}{self._message}{len(self._attachments)}{self._send_time}"
+    def __inner_hash(self):
+        ord_bytes = b''.join(
+            ord(ch).to_bytes(2, 'big') for ch in
+            f"{self._sender}{self._recipient}{self._message}{len(self._attachments)}{self._send_time}"
         )
-        return hashlib.sha256(ord_bytes).hexdigest()
+        return hashlib.sha256(ord_bytes)
+
+    def __hash__(self):
+        return int.from_bytes(self.__inner_hash().digest(), 'big')
 
 
-_DELAY = 10 # sec
+_DELAY = 10  # sec
 
 
 def _decode_str(text):
@@ -143,10 +147,12 @@ def _get_email_body(msg) -> str:
 
 
 class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
-    _listeners: Listeners  = {}
+    _listeners: Listeners = {}
     _list_locked = False
     _list_counter = 0
     _is_authorized = False
+
+    _ignored_mails: Set[int] = set()
 
     def __init__(
             self,
@@ -231,19 +237,31 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
             while self._is_running:
                 print(f"[{datetime.now().strftime("%d.%m.%Y %H:%M:%S")}] Checking emails...")
 
-                self._check()
+                self._process_messages()
 
                 time.sleep(_DELAY)
         except KeyboardInterrupt as ki:
             print("Exiting...")
 
+    def _process_messages(self):
+        results = None
+        try:
+            results = self._check_emails()
+        except Exception as e:
+            print('Пока пропустим письмо! Что то пошло не так: ' + str(e))
+            return
 
-    def _check(self):
-
-        results = self._check_emails()
 
         for result in results:
-            print(result.__dict__())
+            msg_hash = hash(result)
+            if msg_hash in self._ignored_mails:
+                print(f"Message {result.hashsum()} ignored")
+                return
+
+            print('Обработка сообщения...\n')
+            # call handlers
+
+            self._ignored_mails.add(msg_hash)
 
     def _check_emails(self) -> List[MailResult]:
         mails_results: List[MailResult] = []
@@ -256,7 +274,10 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
 
             for email_id in email_ids:
                 # Обработка каждого письма
-                status, msg_data = self._mail_service.fetch(email_id, '(RFC822)')
+                status, msg_data = self._mail_service.uid('fetch', email_id, '(RFC822)')
+
+                print(status, msg_data)
+                # return []
                 msg = email.message_from_bytes(msg_data[0][1])
                 #
                 # subject = _decode_str(msg.get('Subject', ''))
