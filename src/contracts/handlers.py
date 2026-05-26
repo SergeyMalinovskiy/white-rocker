@@ -1,4 +1,6 @@
 from typing import Callable
 
+from watchdog.events import FileSystemEventHandler
+
 FilePath = str
-FileHandler = Callable[[FilePath], None]
+FileHandler = Callable[[FileSystemEventHandler, FilePath], None]

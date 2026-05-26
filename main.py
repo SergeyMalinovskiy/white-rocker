@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
 
 from src.app import App
 
@@ -17,6 +18,11 @@ def main(*args, **kwargs):
         "app": {
             "tmpdir": os.path.abspath("./tmp"),
             "cache_path": os.path.abspath('./tmp/cache'),
+            "log_file": os.path.abspath(f"./logs/{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.log"),
+            "sync_methods": os.getenv('ACTIVE_SYNC_METHODS').split(','),
+        },
+        'data': {
+            "images_path": os.path.abspath("./data/images"),
         },
         "yadisk": {
             'host': os.getenv('YADISK_HOST'),
@@ -25,10 +31,18 @@ def main(*args, **kwargs):
             "client_secret": os.getenv("YADISK_SECRET"),
             'verification_code': os.getenv("YADISK_VERIFICATION_CODE"),
             'sync_dir': os.getenv("YADISK_SYNC_DIR"),
+        },
+        'mailru': {
+            'imap_host':      os.getenv('MAILRU_IMAP_HOST'),
+            'imap_port':      os.getenv('MAILRU_IMAP_PORT'),
+            'smtp_host': os.getenv('MAILRU_SMTP_HOST'),
+            'smtp_port': os.getenv('MAILRU_SMTP_PORT'),
+            'recipient': os.getenv('MAILRU_RECIPIENT_ID'),
+            'sender':    os.getenv('MAILRU_SENDER_ID'),
+            'username':  os.getenv('MAILRU_USERNAME'),
+            'app_pass':  os.getenv('MAILRU_APP_PASS'),
         }
     }
-
-    # print(config)
 
     app = App(config=config)
 

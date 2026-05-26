@@ -11,7 +11,7 @@ PollerHandler = Callable[[IHasData], None]
 
 class ICanAuthorized(ABC):
     @abstractmethod
-    def authorize(self) -> None:
+    def authorize(self) -> bool:
         pass
 
     @abstractmethod
