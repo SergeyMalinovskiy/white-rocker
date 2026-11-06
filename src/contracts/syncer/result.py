@@ -14,7 +14,7 @@ class ISyncMessage(ABC):
         pass
 
     @abstractmethod
-    def receiver(self) -> Recipient:
+    def recipient(self) -> Recipient:
         pass
 
     @abstractmethod

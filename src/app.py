@@ -10,12 +10,10 @@ from contracts.handlers import FilePath
 from cylmore_steganography_kit.src.cylmore_steganography_kit.lsb_encoding_service import LsbEncodingService
 from cylmore_steganography_kit.src.cylmore_steganography_kit.masking.lsb_stegosphere_masking import \
     LsbStegosphereMasking
+from distributors.sync.finalazer_distributor import FinalazerDistributor
 from distributors.sync.mail_distributor import MailDistributor
-from handlers.sync.idle_handler import SyncIdleHandler
-from handlers.sync.pydroid_scaner_handler import PydroidScannerHandler
-from handlers.yadisk_files_handler import YaDiskFileHandler
-from publishers.mail_publisher import MailPublisher
-from publishers.mailru_publisher import MailRuPublisher
+from handlers.sync.sync_handler import ClientHandler
+from publishers.mail_publisher import MailPublisher, MailResult, DefaultAckAssignment
 from src.publishers.yadisk_publisher import YaDiskPublisher
 
 
@@ -65,16 +63,46 @@ class App:
         )
 
         mail_publisher.add_listener(
-            PydroidScannerHandler(
+            ClientHandler(
+                'pydroid-scaner',
                 MailDistributor(
                     self._config.get('mailru').get('smtp_host'),
                     self._config.get('mailru').get('smtp_port'),
                     self._config.get('mailru').get('username'),
                     self._config.get('mailru').get('app_pass'),
+                    "mr_carrier@mail.ru"
                 )
             )
         )
-        mail_publisher.add_listener(SyncIdleHandler())
+        mail_publisher.add_listener(
+            ClientHandler(
+                'finalazer',
+                FinalazerDistributor(
+                    self._config.get('finalazer').get('host'),
+                    self._config.get('finalazer').get('port'),
+                    self._config.get('finalazer').get('token'),
+                )
+            )
+        )
+
+        mail_publisher.force_message(MailResult(
+            'pydroid-scaner',
+            'finalazer/store-card',
+            "{}",
+            [
+                'D:\\Projects\\rust-wages-supervisor\\app\\scripts\\white_rocker\\data\\images\\s_2026-05-26_03-29-32.png'
+            ],
+            DefaultAckAssignment(
+                'email',
+                'pydroid-scaner/fix-card'
+            ),
+            'c8e75dfc2703d0d87f0077f8437106191dd3712747bbafc459b8a1f4659b148a',
+            '20260527_131801'
+
+        ))
+
+        # print(mail_publisher.get_listeners())
+        exit()
 
         mail_publisher.authorize()
 

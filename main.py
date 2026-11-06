@@ -41,6 +41,11 @@ def main(*args, **kwargs):
             'sender':    os.getenv('MAILRU_SENDER_ID'),
             'username':  os.getenv('MAILRU_USERNAME'),
             'app_pass':  os.getenv('MAILRU_APP_PASS'),
+        },
+        'finalazer': {
+            'host': os.getenv('FINALAZER_HOST'),
+            'port': os.getenv('FINALAZER_PORT'),
+            'token': os.getenv('FINALAZER_TOKEN'),
         }
     }
 

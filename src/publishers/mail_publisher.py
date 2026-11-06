@@ -13,7 +13,7 @@ from _asyncio import Task
 from contracts.publisher_service import ICanAuthorized
 from contracts.syncer.ack import IContainsAssignment, Channel
 from contracts.syncer.distributor import ICanListeningIncomingMessages, HandlerId, ICanHandleIncomingMessage, \
-    IAssignableId
+    IAssignableId, IHasMessagesQueue, IHasAckMethod
 from contracts.syncer.result import ISyncMessage, Recipient, Sender
 
 Listeners = dict[HandlerId, Union[ICanHandleIncomingMessage, IAssignableId]]
@@ -38,7 +38,7 @@ class MailResult(ISyncMessage):
             recipient: Recipient,
             message: str,
             attachments: List[str],
-            ack: IContainsAssignment,
+            ack: IContainsAssignment|None,
             hashsum: str,
             send_time: str,
     ) -> None:
@@ -53,7 +53,7 @@ class MailResult(ISyncMessage):
     def sender(self) -> Sender:
         return self._sender
 
-    def receiver(self) -> Recipient:
+    def recipient(self) -> Recipient:
         return self._recipient
 
     def message(self) -> str:
@@ -80,6 +80,7 @@ class MailResult(ISyncMessage):
             'ack': (self._ack.channel(), self._ack.to()) if self._ack else None,
             'send_at': self._send_time,
             'hashsum': self._hashsum,
+            'hash': self.__inner_hash().hexdigest(),
             'is_verified': self._hashsum == self.__inner_hash().hexdigest()
         }
 
@@ -146,7 +147,7 @@ def _get_email_body(msg) -> str:
     return body
 
 
-class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
+class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized, IHasMessagesQueue):
     _listeners: Listeners = {}
     _list_locked = False
     _list_counter = 0
@@ -176,6 +177,9 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
 
         self._is_running = False
 
+    def push_message(self, message: ISyncMessage) -> None:
+        self.force_message(message)
+
     def authorize(self) -> bool:
         self._mail_service = imaplib.IMAP4_SSL(self._imap_host, self._imap_port)
 
@@ -195,7 +199,7 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
     def get_listeners(self) -> Listeners:
         return self._listeners
 
-    def add_listener(self, handler: IAssignableId) -> HandlerId:
+    def add_listener(self, handler: Union[IAssignableId, IHasAckMethod]) -> HandlerId:
         if self._list_locked:
             raise RuntimeError('Record is failed, list already locked')
 
@@ -205,7 +209,10 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
         # poller_hash = hashlib.sha1(f'{addressable.get_address()}{id(handler)}'.encode()).hexdigest()
 
         handler_id = self._list_counter
+
         handler.set_id(handler_id)
+        handler.add_ack_method(self)
+
         self._listeners[handler_id] = handler
         self._list_counter += 1
 
@@ -232,6 +239,9 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
     def async_listen(self) -> Task:
         pass
 
+    def force_message(self, msg: ISyncMessage) -> None:
+        self._process_messages([msg])
+
     def _listen_worker(self):
         try:
             while self._is_running:
@@ -243,10 +253,10 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
         except KeyboardInterrupt as ki:
             print("Exiting...")
 
-    def _process_messages(self):
+    def _process_messages(self, force_messages: List[ISyncMessage] = None) -> None:
         results = None
         try:
-            results = self._check_emails()
+            results = force_messages if len(force_messages) else self._check_emails()
         except Exception as e:
             print('Пока пропустим письмо! Что то пошло не так: ' + str(e))
             return
@@ -259,7 +269,13 @@ class MailPublisher(ICanListeningIncomingMessages, ICanAuthorized):
                 return
 
             print('Обработка сообщения...\n')
-            # call handlers
+            for handler_id, handler in self._listeners.items():
+                handle_result = handler.handle(result)
+                print(handle_result)
+
+                if handle_result.is_handled():
+                    print('Сообщение обработано: ', (handler_id, handler))
+                    break
 
             self._ignored_mails.add(msg_hash)
 
